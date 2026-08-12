@@ -1,0 +1,431 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>RPM Edge AI - Clinical Monitoring Station</title>
+  
+  <!-- Google Fonts & Icons -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+  
+  <!-- React & ReactDOM CDNs -->
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+  <!-- Babel Standalone CDN -->
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+  <style>
+    :root {
+      --bg-primary: #090d16;
+      --bg-secondary: #111827;
+      --bg-card: rgba(17, 24, 39, 0.8);
+      --border-color: rgba(55, 65, 81, 0.5);
+      --border-highlight: rgba(6, 182, 212, 0.4);
+      --text-primary: #f3f4f6;
+      --text-secondary: #9ca3af;
+      --text-muted: #6b7280;
+      --accent-cyan: #06b6d4;
+      --accent-emerald: #10b981;
+      --accent-amber: #f59e0b;
+      --accent-rose: #ef4444;
+      --accent-indigo: #6366f1;
+      --font-sans: 'Inter', system-ui, sans-serif;
+      --font-mono: 'JetBrains Mono', monospace;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background-color: var(--bg-primary);
+      color: var(--text-primary);
+      font-family: var(--font-sans);
+      min-height: 100vh;
+      line-height: 1.5;
+    }
+
+    .glass-panel {
+      background: var(--bg-card);
+      backdrop-filter: blur(12px);
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+      transition: all 0.2s ease;
+    }
+    .glass-panel:hover { border-color: var(--border-highlight); }
+
+    .oscilloscope-box {
+      background-color: #04070d;
+      border: 1px solid rgba(6, 182, 212, 0.3);
+      border-radius: 8px;
+      position: relative;
+      overflow: hidden;
+      box-shadow: inset 0 0 20px rgba(0,0,0,0.8), 0 0 10px rgba(6, 182, 212, 0.15);
+    }
+    .oscilloscope-box::before {
+      content: "";
+      position: absolute;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background-image: 
+        linear-gradient(rgba(6, 182, 212, 0.07) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(6, 182, 212, 0.07) 1px, transparent 1px);
+      background-size: 20px 20px;
+      pointer-events: none;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 10px;
+      border-radius: 9999px;
+      font-size: 0.72rem;
+      font-weight: 600;
+      text-transform: uppercase;
+    }
+    .badge-normal { background: rgba(16, 185, 129, 0.15); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.4); }
+    .badge-warning { background: rgba(245, 158, 11, 0.15); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.4); }
+    .badge-critical { background: rgba(239, 68, 68, 0.2); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.5); animation: pulse-critical 1.5s infinite; }
+
+    @keyframes pulse-critical {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4); }
+      50% { box-shadow: 0 0 12px 4px rgba(239, 68, 68, 0.6); }
+    }
+
+    .mono-val { font-family: var(--font-mono); font-weight: 700; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect, useRef } = React;
+
+    // --- OSCILLOSCOPE CANVAS COMPONENT ---
+    function ECGCanvas({ anomalyType, color = "#10b981", height = 100, label = "ECG Lead II (mV)" }) {
+      const canvasRef = useRef(null);
+
+      useEffect(() => {
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        const ctx = canvas.getContext('2d');
+        let animId;
+        let t = 0;
+        const buffer = new Array(300).fill(0);
+
+        const render = () => {
+          t += 0.05;
+          const hr = anomalyType === "Arrhythmia" ? 115 : (anomalyType === "SensorDisconnect" ? 0 : 75);
+          const freq = hr / 60.0;
+          const phase = (t * freq) % 1.0;
+
+          let val = 0;
+          if (anomalyType === "SensorDisconnect") {
+            val = (Math.random() - 0.5) * 0.04;
+          } else {
+            const p = 0.15 * Math.exp(-Math.pow((phase - 0.12) / 0.03, 2));
+            const q = -0.15 * Math.exp(-Math.pow((phase - 0.22) / 0.01, 2));
+            const r_h = anomalyType === "Arrhythmia" && Math.random() > 0.5 ? 1.6 : 1.2;
+            const r = r_h * Math.exp(-Math.pow((phase - 0.25) / 0.012, 2));
+            const s = -0.35 * Math.exp(-Math.pow((phase - 0.28) / 0.015, 2));
+            const t_w = 0.3 * Math.exp(-Math.pow((phase - 0.45) / 0.05, 2));
+            val = p + q + r + s + t_w + (Math.random() - 0.5) * 0.03;
+          }
+
+          buffer.push(val);
+          if (buffer.length > 300) buffer.shift();
+
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+          // Render trace line
+          ctx.beginPath();
+          ctx.lineWidth = 2.0;
+          ctx.strokeStyle = color;
+          ctx.shadowBlur = 8;
+          ctx.shadowColor = color;
+          const step = canvas.width / (buffer.length - 1);
+          const centerY = canvas.height / 2;
+
+          for (let i = 0; i < buffer.length; i++) {
+            const x = i * step;
+            const y = centerY - (buffer[i] * canvas.height * 0.35);
+            if (i === 0) ctx.moveTo(x, y);
+            else ctx.lineTo(x, y);
+          }
+          ctx.stroke();
+          ctx.shadowBlur = 0;
+
+          // Leading point
+          const lastX = (buffer.length - 1) * step;
+          const lastY = centerY - (buffer[buffer.length - 1] * canvas.height * 0.35);
+          ctx.beginPath();
+          ctx.arc(lastX, lastY, 3.5, 0, 2 * Math.PI);
+          ctx.fillStyle = "#ffffff";
+          ctx.fill();
+
+          animId = requestAnimationFrame(render);
+        };
+
+        render();
+        return () => cancelAnimationFrame(animId);
+      }, [anomalyType, color]);
+
+      return (
+        <div className="oscilloscope-box" style={{ width: '100%', height: `${height}px` }}>
+          <div style={{ position: 'absolute', top: '6px', left: '10px', fontSize: '0.7rem', color, fontWeight: 600, zIndex: 2 }}>
+            {label}
+          </div>
+          <canvas ref={canvasRef} width={500} height={height} style={{ width: '100%', height: '100%', display: 'block' }} />
+        </div>
+      );
+    }
+
+    // --- MAIN APPLICATION ---
+    function App() {
+      const [activeTab, setActiveTab] = useState('dashboard');
+      const [selectedPatient, setSelectedPatient] = useState(null);
+      const [overrides, setOverrides] = useState({});
+      const [alerts, setAlerts] = useState([
+        { id: 1, patient_id: "PAT-102", patient_name: "Marcus Holloway", edge_node_id: "EDGE-NODE-02", severity: "Warning", title: "Edge AI Alert: Borderline SpO2 Drop", description: "SpO2 baseline dropped to 94%. Increased respiration detected.", timestamp: Date.now() / 1000 - 300, acknowledged: false },
+        { id: 2, patient_id: "PAT-104", patient_name: "Dr. Arthur Pendelton", edge_node_id: "EDGE-NODE-04", severity: "Warning", title: "Edge AI Alert: Hypertensive Trend", description: "Blood Pressure elevated to 145/92 mmHg.", timestamp: Date.now() / 1000 - 1200, acknowledged: true, acknowledged_by: "Dr. On-Duty" }
+      ]);
+
+      const [patients, setPatients] = useState([
+        { id: "PAT-101", name: "Eleanor Vance", age: 68, gender: "Female", room: "ICU Bed 01", condition: "Post-MI Monitoring", baseline_hr: 74, baseline_spo2: 97, baseline_sys_bp: 124, baseline_dia_bp: 82, baseline_temp: 36.8, baseline_rr: 16, edge_node_id: "EDGE-NODE-01", status: "Normal" },
+        { id: "PAT-102", name: "Marcus Holloway", age: 54, gender: "Male", room: "Telemetry 204", condition: "COPD Exacerbation", baseline_hr: 82, baseline_spo2: 94, baseline_sys_bp: 138, baseline_dia_bp: 88, baseline_temp: 37.1, baseline_rr: 20, edge_node_id: "EDGE-NODE-02", status: "Warning" },
+        { id: "PAT-103", name: "Sophia Rodriguez", age: 72, gender: "Female", room: "CCU Bed 04", condition: "Congestive Heart Failure", baseline_hr: 68, baseline_spo2: 98, baseline_sys_bp: 118, baseline_dia_bp: 76, baseline_temp: 36.6, baseline_rr: 15, edge_node_id: "EDGE-NODE-03", status: "Normal" },
+        { id: "PAT-104", name: "Dr. Arthur Pendelton", age: 81, gender: "Male", room: "Step-Down 108", condition: "Post-Op Cardiac Bypass", baseline_hr: 92, baseline_spo2: 95, baseline_sys_bp: 145, baseline_dia_bp: 92, baseline_temp: 37.4, baseline_rr: 18, edge_node_id: "EDGE-NODE-04", status: "Warning" }
+      ]);
+
+      const handleTriggerAnomaly = (pid, type) => {
+        setOverrides(prev => ({ ...prev, [pid]: type }));
+        if (type !== "None") {
+          const p = patients.find(x => x.id === pid);
+          setAlerts(prev => [
+            {
+              id: Date.now(),
+              patient_id: pid,
+              patient_name: p ? p.name : pid,
+              edge_node_id: p ? p.edge_node_id : "EDGE-NODE-01",
+              severity: type === "Arrhythmia" || type === "Hypoxia" || type === "Hypertension" ? "Critical" : "Warning",
+              title: `Edge AI Alert: ${type} Triggered`,
+              description: `Real-time Edge AI flagged simulated ${type} anomaly on ${pid}. Immediate clinician review recommended.`,
+              timestamp: Date.now() / 1000,
+              acknowledged: false
+            },
+            ...prev
+          ]);
+        }
+      };
+
+      const handleAcknowledge = (id) => {
+        setAlerts(prev => prev.map(a => a.id === id ? { ...a, acknowledged: true, acknowledged_by: "Dr. On-Duty" } : a));
+      };
+
+      const unackAlerts = alerts.filter(a => !a.acknowledged).length;
+
+      return (
+        <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
+          
+          {/* Header */}
+          <header className="glass-panel" style={{ borderRadius: 0, padding: '14px 24px', marginBottom: '24px' }}>
+            <div style={{ maxWidth: '1400px', margin: '0 auto', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '16px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <div style={{ background: 'linear-gradient(135deg, #06b6d4 0%, #3b82f6 100%)', width: '40px', height: '40px', borderRadius: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 0 15px rgba(6, 182, 212, 0.4)', color: '#fff', fontWeight: 'bold' }}>
+                  ECG
+                </div>
+                <div>
+                  <h1 style={{ fontSize: '1.25rem', fontWeight: 700, background: 'linear-gradient(to right, #ffffff, #93c5fd)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
+                    RPM EDGE AI
+                  </h1>
+                  <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Remote Patient Monitoring &amp; Low-Latency Anomaly Detection</p>
+                </div>
+              </div>
+
+              {/* Tabs */}
+              <nav style={{ display: 'flex', background: 'rgba(15, 23, 42, 0.8)', padding: '4px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                <button onClick={() => setActiveTab('dashboard')} style={{ padding: '8px 16px', borderRadius: '6px', border: 0, background: activeTab === 'dashboard' ? 'var(--accent-cyan)' : 'transparent', color: activeTab === 'dashboard' ? '#000' : 'var(--text-secondary)', fontWeight: 600, cursor: 'pointer' }}>
+                  Patient Monitors ({patients.length})
+                </button>
+                <button onClick={() => setActiveTab('alerts')} style={{ padding: '8px 16px', borderRadius: '6px', border: 0, background: activeTab === 'alerts' ? 'var(--accent-cyan)' : 'transparent', color: activeTab === 'alerts' ? '#000' : 'var(--text-secondary)', fontWeight: 600, cursor: 'pointer' }}>
+                  Alert Desk {unackAlerts > 0 && <span style={{ background: 'var(--accent-rose)', color: '#fff', fontSize: '0.65rem', padding: '2px 6px', borderRadius: '10px', marginLeft: '4px' }}>{unackAlerts}</span>}
+                </button>
+                <button onClick={() => setActiveTab('edge')} style={{ padding: '8px 16px', borderRadius: '6px', border: 0, background: activeTab === 'edge' ? 'var(--accent-cyan)' : 'transparent', color: activeTab === 'edge' ? '#000' : 'var(--text-secondary)', fontWeight: 600, cursor: 'pointer' }}>
+                  Edge Hardware
+                </button>
+              </nav>
+
+              {/* Latency Pill */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'rgba(30, 41, 59, 0.8)', padding: '6px 12px', borderRadius: '6px', border: '1px solid var(--border-color)', fontSize: '0.8rem' }}>
+                <span style={{ color: 'var(--text-secondary)' }}>Edge Latency:</span>
+                <span className="mono-val" style={{ color: '#fff' }}>4.2ms</span>
+              </div>
+            </div>
+          </header>
+
+          {/* Body Content */}
+          <main style={{ flex: 1, maxWidth: '1400px', width: '100%', margin: '0 auto', padding: '0 24px 40px' }}>
+            
+            {activeTab === 'dashboard' && (
+              <div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(330px, 1fr))', gap: '20px' }}>
+                  {patients.map(p => {
+                    const anom = overrides[p.id] || "None";
+                    const isCrit = anom === "Arrhythmia" || anom === "Hypoxia" || anom === "Hypertension";
+                    const color = isCrit ? "#ef4444" : "#10b981";
+                    
+                    let hr = p.baseline_hr;
+                    let spo2 = p.baseline_spo2;
+                    let sys = p.baseline_sys_bp;
+
+                    if (anom === "Arrhythmia") hr += 42;
+                    if (anom === "Hypoxia") spo2 = 86;
+                    if (anom === "Hypertension") sys += 50;
+
+                    return (
+                      <div key={p.id} className="glass-panel" style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px', borderLeft: isCrit ? '4px solid var(--accent-rose)' : '4px solid var(--accent-emerald)' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                          <div>
+                            <h3 style={{ fontSize: '1.1rem', fontWeight: 700, color: '#fff' }}>{p.name}</h3>
+                            <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>{p.room} • {p.condition}</p>
+                          </div>
+                          <span className={`badge ${isCrit ? "badge-critical" : "badge-normal"}`}>
+                            {anom !== "None" ? anom : "Normal Sinus"}
+                          </span>
+                        </div>
+
+                        <ECGCanvas anomalyType={anom} color={color} height={90} label={`Live Lead II - 4.2ms Edge AI`} />
+
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px' }}>
+                          <div style={{ background: 'rgba(15, 23, 42, 0.6)', padding: '10px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                            <div style={{ fontSize: '0.7rem', color: 'var(--accent-rose)', fontWeight: 600 }}>HEART RATE</div>
+                            <div className="mono-val" style={{ fontSize: '1.4rem', color: hr > 100 ? 'var(--accent-rose)' : '#fff' }}>{Math.round(hr)} <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>bpm</span></div>
+                          </div>
+                          <div style={{ background: 'rgba(15, 23, 42, 0.6)', padding: '10px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                            <div style={{ fontSize: '0.7rem', color: 'var(--accent-cyan)', fontWeight: 600 }}>SpO2</div>
+                            <div className="mono-val" style={{ fontSize: '1.4rem', color: spo2 < 92 ? 'var(--accent-rose)' : '#fff' }}>{Math.round(spo2)} <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>%</span></div>
+                          </div>
+                          <div style={{ background: 'rgba(15, 23, 42, 0.6)', padding: '10px', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                            <div style={{ fontSize: '0.7rem', color: 'var(--accent-amber)', fontWeight: 600 }}>BLOOD PRESS.</div>
+                            <div className="mono-val" style={{ fontSize: '1.2rem', color: sys > 140 ? 'var(--accent-amber)' : '#fff' }}>{Math.round(sys)}/{p.baseline_dia_bp}</div>
+                          </div>
+                        </div>
+
+                        <button onClick={() => setSelectedPatient(p)} style={{ background: 'rgba(6, 182, 212, 0.12)', border: '1px solid rgba(6, 182, 212, 0.3)', color: 'var(--accent-cyan)', padding: '8px', borderRadius: '6px', fontWeight: 600, cursor: 'pointer' }}>
+                          View Diagnostics &amp; HRV &rarr;
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Simulation Control Bench */}
+                <div className="glass-panel" style={{ marginTop: '24px', padding: '20px', borderTop: '2px solid var(--accent-cyan)' }}>
+                  <h4 style={{ fontSize: '0.95rem', fontWeight: 700, color: '#fff', marginBottom: '12px' }}>CLINICAL ANOMALY SIMULATION BENCH</h4>
+                  <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'center' }}>
+                    <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Select Patient:</span>
+                    <select id="sim-patient-select" style={{ background: '#090d16', color: '#fff', border: '1px solid var(--border-color)', padding: '6px 12px', borderRadius: '6px', fontWeight: 600 }}>
+                      {patients.map(p => <option key={p.id} value={p.id}>{p.name} ({p.id})</option>)}
+                    </select>
+                    {["None", "Arrhythmia", "Hypoxia", "Hypertension", "SensorDisconnect"].map(anom => (
+                      <button 
+                        key={anom} 
+                        onClick={() => {
+                          const pid = document.getElementById("sim-patient-select").value;
+                          handleTriggerAnomaly(pid, anom);
+                        }}
+                        style={{ padding: '6px 12px', borderRadius: '6px', border: '1px solid var(--border-color)', background: 'rgba(15, 23, 42, 0.8)', color: '#fff', fontSize: '0.75rem', fontWeight: 600, cursor: 'pointer' }}
+                      >
+                        Trigger {anom}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {activeTab === 'alerts' && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                <h2 style={{ fontSize: '1.2rem', color: '#fff' }}>Clinical Alert Triage Desk</h2>
+                {alerts.map(a => (
+                  <div key={a.id} className="glass-panel" style={{ padding: '16px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderLeft: a.severity === 'Critical' ? '4px solid var(--accent-rose)' : '4px solid var(--accent-amber)' }}>
+                    <div>
+                      <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                        <span className={`badge ${a.severity === 'Critical' ? 'badge-critical' : 'badge-warning'}`}>{a.severity}</span>
+                        <strong style={{ color: '#fff' }}>{a.title}</strong>
+                      </div>
+                      <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginTop: '4px' }}>{a.description}</p>
+                      <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Patient: {a.patient_name} • Node: {a.edge_node_id}</span>
+                    </div>
+                    {a.acknowledged ? (
+                      <span style={{ color: 'var(--accent-emerald)', fontSize: '0.8rem', fontWeight: 600 }}>Acknowledged ({a.acknowledged_by})</span>
+                    ) : (
+                      <button onClick={() => handleAcknowledge(a.id)} style={{ background: 'rgba(16, 185, 129, 0.15)', border: '1px solid rgba(16, 185, 129, 0.4)', color: 'var(--accent-emerald)', padding: '6px 14px', borderRadius: '6px', fontWeight: 600, cursor: 'pointer' }}>
+                        Acknowledge Alert
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {activeTab === 'edge' && (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '16px' }}>
+                <div className="glass-panel" style={{ padding: '20px' }}>
+                  <div style={{ fontSize: '0.8rem', color: 'var(--accent-cyan)', fontWeight: 600 }}>EDGE INFERENCE LATENCY</div>
+                  <div className="mono-val" style={{ fontSize: '2.2rem', color: '#fff', marginTop: '8px' }}>4.2 <span style={{ fontSize: '0.9rem' }}>ms</span></div>
+                  <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '4px' }}>NVIDIA Jetson Orin Nano / ARM Cortex-M55</p>
+                </div>
+                <div className="glass-panel" style={{ padding: '20px' }}>
+                  <div style={{ fontSize: '0.8rem', color: 'var(--accent-emerald)', fontWeight: 600 }}>BATTERY RESERVE</div>
+                  <div className="mono-val" style={{ fontSize: '2.2rem', color: '#fff', marginTop: '8px' }}>98.5%</div>
+                  <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '4px' }}>Optimal power management</p>
+                </div>
+                <div className="glass-panel" style={{ padding: '20px' }}>
+                  <div style={{ fontSize: '0.8rem', color: 'var(--accent-indigo)', fontWeight: 600 }}>CPU / RAM LOAD</div>
+                  <div className="mono-val" style={{ fontSize: '2.2rem', color: '#fff', marginTop: '8px' }}>14.8%</div>
+                  <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '4px' }}>RAM: 142.8 MB / 4096 MB</p>
+                </div>
+              </div>
+            )}
+
+          </main>
+
+          {/* Diagnostic Modal */}
+          {selectedPatient && (
+            <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.85)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
+              <div className="glass-panel" style={{ width: '100%', maxWidth: '800px', padding: '28px', background: '#0b0f19' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '16px' }}>
+                  <div>
+                    <h2 style={{ fontSize: '1.4rem', color: '#fff' }}>{selectedPatient.name}</h2>
+                    <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>ID: {selectedPatient.id} • Room: {selectedPatient.room}</p>
+                  </div>
+                  <button onClick={() => setSelectedPatient(null)} style={{ background: 'transparent', border: 0, color: '#fff', fontSize: '1.2rem', cursor: 'pointer' }}>&times;</button>
+                </div>
+                <ECGCanvas anomalyType={overrides[selectedPatient.id] || "None"} color="#10b981" height={120} label="Continuous Lead II ECG (100Hz)" />
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginTop: '16px', fontSize: '0.85rem' }}>
+                  <div style={{ background: 'rgba(15, 23, 42, 0.8)', padding: '12px', borderRadius: '8px' }}>
+                    <strong style={{ color: 'var(--accent-cyan)' }}>HRV Metrics:</strong>
+                    <div>Mean RR: 812.5 ms</div>
+                    <div>SDNN: 38.2 ms</div>
+                    <div>RMSSD: 29.4 ms</div>
+                  </div>
+                  <div style={{ background: 'rgba(15, 23, 42, 0.8)', padding: '12px', borderRadius: '8px' }}>
+                    <strong style={{ color: 'var(--accent-indigo)' }}>Edge AI Assessment:</strong>
+                    <div>Latency: 4.2 ms</div>
+                    <div>Risk Index: {overrides[selectedPatient.id] && overrides[selectedPatient.id] !== "None" ? "92%" : "5%"}</div>
+                    <div>Status: {overrides[selectedPatient.id] || "Normal Sinus"}</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+  </script>
+</body>
+</html>
