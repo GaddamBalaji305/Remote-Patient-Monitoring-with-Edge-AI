@@ -5,6 +5,8 @@ services:
     buildCommand: pip install -r requirements.txt && python scripts/seed_database.py
     startCommand: python -m uvicorn backend.app.main:app --host 0.0.0.0 --port $PORT
     envVars:
+      - key: PYTHONPATH
+        value: .
       - key: SECRET_KEY
         generateValue: true
       - key: ALGORITHM
