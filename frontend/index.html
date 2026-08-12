@@ -113,11 +113,14 @@
     const { ResponsiveContainer, LineChart, Line, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid, Legend } = RechartsObj;
 
     // --- API & WEBSOCKET BASE CONFIG ---
-    const API_BASE = window.location.origin.includes("3000") || window.location.origin.includes("5173")
+    const API_BASE = (window.location.origin.includes("3000") || window.location.origin.includes("5173") || window.location.origin.includes("vercel.app"))
       ? "http://127.0.0.1:8000/api"
       : `${window.location.origin}/api`;
 
-    const WS_BASE = window.location.origin.replace(/^http/, 'ws') + "/ws/monitoring";
+    const WS_BASE = (window.location.origin.includes("3000") || window.location.origin.includes("5173") || window.location.origin.includes("vercel.app"))
+      ? "ws://127.0.0.1:8000/ws/monitoring"
+      : window.location.origin.replace(/^http/, 'ws') + "/ws/monitoring";
+
 
     // --- ECG CANVAS OSCILLOSCOPE ---
     function ECGCanvas({ status = "NORMAL", height = 80, label = "ECG Lead II (mV)" }) {
