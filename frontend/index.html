@@ -254,6 +254,59 @@
       const [statusFilter, setStatusFilter] = useState('ALL');
       const [alertFilter, setAlertFilter] = useState('ALL');
 
+      // Add Patient Modal States
+      const [showAddPatientModal, setShowAddPatientModal] = useState(false);
+      const [newPatientData, setNewPatientData] = useState({
+        patient_code: 'PAT-006',
+        name: '',
+        age: 50,
+        gender: 'Male',
+        room: 'Ward 104',
+        phone: '+1-555-0199',
+        emergency_contact: '+1-555-9900'
+      });
+
+      const handleCreatePatient = async (e) => {
+        if (e) e.preventDefault();
+        try {
+          const headers = {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          };
+          const res = await fetch(`${API_BASE}/patients`, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify(newPatientData)
+          });
+          if (!res.ok) {
+            const errData = await res.json();
+            throw new Error(errData.detail || 'Failed to register patient');
+          }
+          const created = await res.json();
+          setPatients(prev => [created, ...prev]);
+          setStats(prev => ({ ...prev, total_patients: prev.total_patients + 1 }));
+          setShowAddPatientModal(false);
+          setToast({
+            severity: 'NORMAL',
+            alert_type: 'PATIENT_REGISTERED',
+            message: `Patient ${created.name} (${created.patient_code}) successfully registered in telemetry system.`,
+            patient_id: created.patient_code
+          });
+          setNewPatientData({
+            patient_code: 'PAT-007',
+            name: '',
+            age: 50,
+            gender: 'Male',
+            room: 'Ward 104',
+            phone: '+1-555-0199',
+            emergency_contact: '+1-555-9900'
+          });
+        } catch (err) {
+          alert(err.message);
+        }
+      };
+
+
       // Sync window hash location
       useEffect(() => {
         const handleHashChange = () => {
@@ -680,22 +733,127 @@
             </div>
           </header>
 
-          {/* FLOATING TOAST NOTIFICATION */}
-          {toast && (
-            <div className={`fixed top-20 right-6 z-50 glass-panel p-5 max-w-md w-full shadow-2xl flex items-start justify-between gap-4 animate-bounce ${toast.severity === 'CRITICAL' ? 'border-l-4 border-rose-500 bg-rose-950/40' : 'border-l-4 border-amber-500 bg-amber-950/40'}`}>
-              <div className="space-y-1">
-                <div className="flex items-center gap-2">
-                  <span className={toast.severity === 'CRITICAL' ? 'badge-critical px-2 py-0.5 rounded-full text-[0.65rem] font-bold' : 'badge-warning px-2 py-0.5 rounded-full text-[0.65rem] font-bold'}>
-                    {toast.severity}
-                  </span>
-                  <div className="text-xs font-bold text-white uppercase tracking-wider">{toast.alert_type}</div>
+          {/* REGISTER NEW PATIENT MODAL */}
+          {showAddPatientModal && (
+            <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+              <div className="glass-panel p-6 max-w-lg w-full space-y-5 border-l-4 border-cyan-500 bg-slate-950 shadow-2xl animate-fade-in">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                      <span>🩺 Register New Patient</span>
+                    </h3>
+                    <p className="text-xs text-gray-400">Add a new patient profile to the Edge AI Monitoring Network</p>
+                  </div>
+                  <button onClick={() => setShowAddPatientModal(false)} className="text-gray-400 hover:text-white text-xl font-bold">&times;</button>
                 </div>
-                <pre className="text-xs text-gray-200 font-sans whitespace-pre-wrap leading-relaxed mt-1">{toast.message}</pre>
-                <div className="text-[0.65rem] text-gray-400 font-mono pt-1">Patient Code: {toast.patient_id}</div>
+
+                <form onSubmit={handleCreatePatient} className="space-y-4">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-300 mb-1">Patient Code</label>
+                      <input 
+                        type="text" 
+                        value={newPatientData.patient_code} 
+                        onChange={e => setNewPatientData(p => ({ ...p, patient_code: e.target.value }))}
+                        required 
+                        className="w-full bg-slate-900 border border-gray-800 rounded-xl px-3 py-2 text-xs text-white font-mono focus:outline-none focus:border-cyan-500"
+                        placeholder="e.g. PAT-006"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-300 mb-1">Full Name</label>
+                      <input 
+                        type="text" 
+                        value={newPatientData.name} 
+                        onChange={e => setNewPatientData(p => ({ ...p, name: e.target.value }))}
+                        required 
+                        className="w-full bg-slate-900 border border-gray-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-cyan-500"
+                        placeholder="e.g. John Doe"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-3">
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-300 mb-1">Age</label>
+                      <input 
+                        type="number" 
+                        value={newPatientData.age} 
+                        onChange={e => setNewPatientData(p => ({ ...p, age: parseInt(e.target.value) || 0 }))}
+                        required 
+                        min="1"
+                        max="120"
+                        className="w-full bg-slate-900 border border-gray-800 rounded-xl px-3 py-2 text-xs text-white font-mono focus:outline-none focus:border-cyan-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-300 mb-1">Gender</label>
+                      <select 
+                        value={newPatientData.gender} 
+                        onChange={e => setNewPatientData(p => ({ ...p, gender: e.target.value }))}
+                        className="w-full bg-slate-900 border border-gray-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-cyan-500"
+                      >
+                        <option value="Male">Male</option>
+                        <option value="Female">Female</option>
+                        <option value="Other">Other</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-300 mb-1">Room / Bed</label>
+                      <input 
+                        type="text" 
+                        value={newPatientData.room} 
+                        onChange={e => setNewPatientData(p => ({ ...p, room: e.target.value }))}
+                        required 
+                        className="w-full bg-slate-900 border border-gray-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-cyan-500"
+                        placeholder="ICU Bed 05"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-300 mb-1">Phone Number</label>
+                      <input 
+                        type="text" 
+                        value={newPatientData.phone} 
+                        onChange={e => setNewPatientData(p => ({ ...p, phone: e.target.value }))}
+                        className="w-full bg-slate-900 border border-gray-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-cyan-500"
+                        placeholder="+1-555-0199"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-300 mb-1">Emergency Contact</label>
+                      <input 
+                        type="text" 
+                        value={newPatientData.emergency_contact} 
+                        onChange={e => setNewPatientData(p => ({ ...p, emergency_contact: e.target.value }))}
+                        className="w-full bg-slate-900 border border-gray-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-cyan-500"
+                        placeholder="+1-555-9900"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="pt-3 flex items-center justify-end gap-3 border-t border-gray-800">
+                    <button 
+                      type="button" 
+                      onClick={() => setShowAddPatientModal(false)}
+                      className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-gray-300 text-xs font-semibold rounded-xl"
+                    >
+                      Cancel
+                    </button>
+                    <button 
+                      type="submit" 
+                      className="px-5 py-2 bg-cyan-500 hover:bg-cyan-400 text-black text-xs font-bold rounded-xl shadow-lg shadow-cyan-500/20"
+                    >
+                      Save & Register Patient
+                    </button>
+                  </div>
+                </form>
               </div>
-              <button onClick={() => setToast(null)} className="text-gray-400 hover:text-white text-lg font-bold">&times;</button>
             </div>
           )}
+
 
           {/* MAIN PAGE BODY CONTENT */}
           <main className="flex-1 max-w-7xl w-full mx-auto p-6 space-y-6">
@@ -914,17 +1072,32 @@
                       <span className="text-xs font-mono font-normal text-cyan-400 bg-cyan-500/10 px-2 py-0.5 rounded-md border border-cyan-500/20">Live WebSockets Sync</span>
                     </h2>
 
-                    <div className="flex bg-slate-900 p-1 rounded-xl border border-gray-800 text-xs font-semibold">
-                      {['ALL', 'NORMAL', 'WARNING', 'CRITICAL', 'OFFLINE'].map(st => (
-                        <button 
-                          key={st} 
-                          onClick={() => setStatusFilter(st)}
-                          className={`px-3 py-1.5 rounded-lg transition-all ${statusFilter === st ? 'bg-cyan-500 text-black' : 'text-gray-400 hover:text-white'}`}
-                        >
-                          {st}
-                        </button>
-                      ))}
+                    <div className="flex items-center gap-3 flex-wrap">
+                      <button 
+                        onClick={() => {
+                          const nextNum = (patients.length + 1).toString().padStart(3, '0');
+                          setNewPatientData(prev => ({ ...prev, patient_code: `PAT-${nextNum}` }));
+                          setShowAddPatientModal(true);
+                        }}
+                        className="px-4 py-1.5 bg-cyan-500 hover:bg-cyan-400 text-black text-xs font-bold rounded-xl transition-all shadow-lg shadow-cyan-500/20 flex items-center gap-1.5"
+                      >
+                        <span className="text-sm font-black">+</span>
+                        <span>Register New Patient</span>
+                      </button>
+
+                      <div className="flex bg-slate-900 p-1 rounded-xl border border-gray-800 text-xs font-semibold">
+                        {['ALL', 'NORMAL', 'WARNING', 'CRITICAL', 'OFFLINE'].map(st => (
+                          <button 
+                            key={st} 
+                            onClick={() => setStatusFilter(st)}
+                            className={`px-3 py-1.5 rounded-lg transition-all ${statusFilter === st ? 'bg-cyan-500 text-black' : 'text-gray-400 hover:text-white'}`}
+                          >
+                            {st}
+                          </button>
+                        ))}
+                      </div>
                     </div>
+
                   </div>
 
                   {filteredPatients.length === 0 ? (
